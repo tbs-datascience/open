@@ -7,6 +7,7 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer 
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics.pairwise import euclidean_distances
+from sentence_transformers import SentenceTransformer
 
 documents = pd.read_excel('input.xlsx')
                           
@@ -18,7 +19,6 @@ stop_words_l=stopwords.words('english')
 documents_df['documents_cleaned']=documents_df.documents.apply(lambda x: " ".join(re.sub(r'[^a-zA-Z]',' ',w).lower() for w in x.split() if re.sub(r'[^a-zA-Z]',' ',w).lower() not in stop_words_l) )
 
 #call transformers package for embeddings
-from sentence_transformers import SentenceTransformer
 sbert_model = SentenceTransformer('bert-base-nli-mean-tokens')
 
 document_embeddings = sbert_model.encode(documents_df['documents_cleaned'])
