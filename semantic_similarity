@@ -1,0 +1,36 @@
+import pandas as pd
+import numpy as np
+from nltk.corpus import stopwords
+import nltk
+nltk.download('stopwords')
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer 
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import euclidean_distances
+
+documents = pd.read_excel('input.xlsx')
+                          
+
+documents_df=pd.DataFrame(documents,columns=['documents'])
+
+# removing special characters and stop words from the text
+stop_words_l=stopwords.words('english')
+documents_df['documents_cleaned']=documents_df.documents.apply(lambda x: " ".join(re.sub(r'[^a-zA-Z]',' ',w).lower() for w in x.split() if re.sub(r'[^a-zA-Z]',' ',w).lower() not in stop_words_l) )
+
+#call transformers package for embeddings
+from sentence_transformers import SentenceTransformer
+sbert_model = SentenceTransformer('bert-base-nli-mean-tokens')
+
+document_embeddings = sbert_model.encode(documents_df['documents_cleaned'])
+
+pairwise_similarities=cosine_similarity(document_embeddings)
+pairwise_differences=euclidean_distances(document_embeddings)
+
+## convert your array into a dataframe
+output = pd.DataFrame(pairwise_similarities)
+
+## save to xlsx file
+
+filepath = 'output.xlsx'
+
+output.to_excel(filepath, index=False)
