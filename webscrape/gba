@@ -1,0 +1,127 @@
+https://www.dataquest.io/blog/web-scraping-beautifulsoup/
+https://realpython.com/python-web-scraping-practical-introduction/
+
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+from transformers import BertModel, BertTokenizer
+import torch
+from sklearn.metrics.pairwise import cosine_similarity
+
+# URL of the webpage to scrape
+url = 'https://www.canada.ca/en/employment-social-development/corporate/reports/departmental-results/2022-2023/gender-based-analysis.html'
+
+# Predefined list of relevant headers
+relevant_headers = [
+    "Section 1: Institutional GBA Plus Governance and Capacity",
+    "Definition of gender-based analysis plus (GBA plus)",
+    "Governance",
+    "Capacity",
+    "Data Investments",
+    "Section 2: Gender and Diversity Impacts, by Program",
+    "Core responsibility",
+    "Program name",
+    "Program goals",
+    "Target population",
+    "Distribution of Benefits",
+    "Specific Demographic Group Outcomes",
+    "Key impacts (statistics)",
+    "Key impacts (other)",
+    "Supplementary information sources",
+    "Key Program Impact on Gender and Diversity",
+    "GBA Plus Data Collection Plan",
+    "Other key program impacts"
+]
+
+# Load BERT model and tokenizer
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased')
+
+def encode_texts(texts):
+    # Encode texts using BERT
+    inputs = tokenizer(texts, return_tensors='pt', padding=True, truncation=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    return outputs.last_hidden_state.mean(dim=1).numpy()
+
+# Encode the relevant headers
+relevant_encodings = encode_texts(relevant_headers)
+
+# Send a GET request to the URL
+response = requests.get(url)
+
+# Check if the request was successful
+if response.status_code == 200:
+    # Parse the HTML content using BeautifulSoup
+    soup = BeautifulSoup(response.content, 'html.parser')
+    
+    # Create lists to store the scraped data
+    h2_list = []
+    h3_list = []
+    p_list = []
+    associated_texts = []
+    
+    current_h2 = ''
+    current_h3 = ''
+    current_associated_text = ''
+    
+    # Function to process text and check for relevant headers
+    def process_text(tag, current_h2, current_h3):
+        tag_text = tag.get_text(strip=True)
+        tag_encoding = encode_texts([tag_text])
+        similarities = cosine_similarity(tag_encoding, relevant_encodings)
+        max_similarity = similarities.max()
+        return tag_text, max_similarity
+
+    # Iterate through all tags to capture headers and paragraphs
+    for tag in soup.find_all(['h2', 'h3', 'p']):
+        tag_text, max_similarity = process_text(tag, current_h2, current_h3)
+        
+        if tag.name == 'h2':
+            if current_h2:
+                h2_list.append(current_h2)
+                h3_list.append(current_h3)
+                p_list.append(current_associated_text)
+                associated_texts.append('')
+            current_h2 = tag_text
+            current_h3 = ''
+            current_associated_text = ''
+        elif tag.name == 'h3':
+            if current_h3:
+                h2_list.append(current_h2)
+                h3_list.append(current_h3)
+                p_list.append(current_associated_text)
+                associated_texts.append('')
+            current_h3 = tag_text
+            current_associated_text = ''
+        elif tag.name == 'p':
+            if max_similarity > 0.7:
+                h2_list.append(current_h2)
+                h3_list.append(current_h3)
+                p_list.append(tag_text)
+                associated_texts.append(tag_text)
+                current_associated_text = ''
+            else:
+                current_associated_text += ' ' + tag_text
+    
+    # Append the last collected texts
+    if current_h2 or current_h3 or current_associated_text:
+        h2_list.append(current_h2)
+        h3_list.append(current_h3)
+        p_list.append(current_associated_text)
+        associated_texts.append('')
+
+    # Create a DataFrame from the lists
+    df = pd.DataFrame({
+        'H2': h2_list,
+        'H3': h3_list,
+        'Paragraph': p_list,
+        'Associated Text': associated_texts
+    })
+    
+    # Save the DataFrame to an Excel file
+    df.to_excel('scraped_data.xlsx', index=False)
+    print('Data has been successfully scraped and saved to scraped_data.xlsx')
+else:
+    print('Failed to retrieve the webpage. Status code:', response.status_code)
